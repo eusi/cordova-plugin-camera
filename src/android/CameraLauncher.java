@@ -193,7 +193,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 }
                 else if ((this.srcType == PHOTOLIBRARY) || (this.srcType == SAVEDPHOTOALBUM)) {
                     // FIXME: Stop always requesting the permission
-                    String[] permissions = getPermissions(true, mediaType);
+                    String[] permissions = getPermissions(true, mediaType, true);
                     if(!hasPermissions(permissions)) {
                         PermissionHelper.requestPermissions(this, SAVE_TO_ALBUM_SEC, permissions);
                     } else {
@@ -222,16 +222,22 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     // LOCAL METHODS
     //--------------------------------------------------------------------------
 
-    private String[] getPermissions(boolean storageOnly, int mediaType) {
+    private String[] getPermissions(boolean storageOnly, int mediaType, boolean readOnly) {
         ArrayList<String> permissions = new ArrayList<>();
 
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // Android API 33 and higher
             switch (mediaType) {
                 case PICTURE:
+                    if (android.os.Build.VERSION.SDK_INT >= 34)
+                      permissions.add("android.permission.READ_MEDIA_VISUAL_USER_SELECTED");
+
                     permissions.add(Manifest.permission.READ_MEDIA_IMAGES);
                     break;
                 case VIDEO:
+                    if (android.os.Build.VERSION.SDK_INT >= 34)
+                      permissions.add("android.permission.READ_MEDIA_VISUAL_USER_SELECTED");
+
                     permissions.add(Manifest.permission.READ_MEDIA_VIDEO);
                     break;
                 default:
@@ -242,7 +248,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         } else {
             // Android API 32 or lower
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            if(!readOnly)
+              permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
 
         if (!storageOnly) {
@@ -275,7 +282,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      * @param encodingType           Compression quality hint (0-100: 0=low quality & high compression, 100=compress of max quality)
      */
     public void callTakePicture(int returnType, int encodingType) {
-        String[] storagePermissions = getPermissions(true, mediaType);
+        String[] storagePermissions = getPermissions(true, mediaType, false);
         boolean saveAlbumPermission;
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             saveAlbumPermission = this.saveToPhotoAlbum ? hasPermissions(storagePermissions) : true;
@@ -314,7 +321,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         } else if (takePicturePermission) {
             PermissionHelper.requestPermissions(this, TAKE_PIC_SEC, storagePermissions);
         } else {
-            PermissionHelper.requestPermissions(this, TAKE_PIC_SEC, getPermissions(false, mediaType));
+            PermissionHelper.requestPermissions(this, TAKE_PIC_SEC, getPermissions(false, mediaType, false));
         }
     }
 
@@ -1350,11 +1357,16 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
     public void onRequestPermissionResult(int requestCode, String[] permissions,
                                           int[] grantResults) {
+        //workaround
+        int i = 0;
         for (int r : grantResults) {
-            if (r == PackageManager.PERMISSION_DENIED) {
+            if (r == PackageManager.PERMISSION_GRANTED )
+              break; // I am happy if at least one got granted...
+            if (r == PackageManager.PERMISSION_DENIED && grantResults.length-1 == i) {
                 this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
                 return;
             }
+            i++;
         }
         switch (requestCode) {
             case TAKE_PIC_SEC:
